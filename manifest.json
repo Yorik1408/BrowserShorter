@@ -1,0 +1,19 @@
+{
+  "name": "Screen Recorder + Screenshots",
+  "description": "Record screen and take screenshots",
+  "version": "1.2",
+  "manifest_version": 3,
+  "permissions": [
+    "tabCapture",
+    "downloads",
+    "offscreen",
+    "tabs",
+    "activeTab"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
