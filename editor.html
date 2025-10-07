@@ -1,27 +1,28 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Screenshot Editor</title>
-  <style>
-    body { margin: 0; overflow: hidden; }
-    #toolbar {
-      position: fixed; top: 0; left: 0; width: 100%;
-      background: #222; color: #fff; padding: 5px; display: flex; gap: 5px; z-index: 10000;
-    }
-    button { padding: 5px 10px; }
-    canvas { display: block; margin-top: 40px; }
-  </style>
+<meta charset="UTF-8">
+<title>Screenshot Editor</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; }
+  #toolbar {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 50px;
+    background: #333; color: #fff; display: flex; align-items: center; gap: 8px; padding: 4px;
+    z-index: 1000;
+  }
+  #toolbar button { padding: 4px 8px; cursor: pointer; }
+  canvas { display: block; margin-top: 50px; }
+</style>
 </head>
 <body>
-  <div id="toolbar">
-    <button id="line">Line</button>
-    <button id="arrow">Arrow</button>
-    <button id="rect">Rect</button>
-    <button id="text">Text</button>
-    <button id="save">Save</button>
-  </div>
-  <canvas id="canvas"></canvas>
-  <script src="editor.js"></script>
+<div id="toolbar">
+  <button data-tool="pen">✏ Pen</button>
+  <button data-tool="arrow">➤ Arrow</button>
+  <button data-tool="text">T Text</button>
+  <button id="saveBtn">💾 Save</button>
+</div>
+<canvas id="editorCanvas"></canvas>
+<script src="editor.js"></script>
 </body>
 </html>
