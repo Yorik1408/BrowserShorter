@@ -1,19 +1,24 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>Screen Recorder</title>
+  <meta charset="utf-8" />
+  <title>Recorder</title>
   <style>
     body { font-family: sans-serif; padding: 10px; }
-    button { margin: 5px; padding: 6px 12px; }
-    #status { display: block; margin-top: 10px; font-weight: bold; }
+    button { display: block; margin: 6px 0; padding: 8px 12px; width: 240px; }
+    hr { margin: 10px 0; }
+    #status { font-weight: bold; margin-top: 8px; }
   </style>
 </head>
 <body>
-  <button id="start">Start Recording</button>
-  <button id="stop" disabled>Stop Recording</button>
-  <button id="screenshot">📸 Screenshot</button>
-  <span id="status">⏸ Ready</span>
+  <button id="start-recording">▶ Start Recording</button>
+  <button id="stop-recording" disabled>⏹ Stop Recording</button>
+  <div id="status">⏸ Ready</div>
+  <hr>
+  <button id="screenshot-tab">📸 Screenshot Tab</button>
+  <button id="screenshot-area">🔲 Screenshot Area</button>
+  <p><small>Для скриншота области: нажмите "Screenshot Area", выделите область мышью (popup можно закрыть)</small></p>
+
   <script src="popup.js"></script>
 </body>
 </html>

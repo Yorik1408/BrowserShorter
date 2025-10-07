@@ -1,19 +1,40 @@
 {
-  "name": "Screen Recorder + Screenshots",
-  "description": "Record screen and take screenshots",
-  "version": "1.2",
   "manifest_version": 3,
+  "name": "Screen Recorder & Screenshots",
+  "version": "2.0",
+  "description": "Расширение для записи экрана и создания скриншотов (вкладка, область)",
   "permissions": [
     "tabCapture",
     "downloads",
-    "offscreen",
+    "activeTab",
+    "scripting",
     "tabs",
-    "activeTab"
+    "offscreen"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_title": "Recorder"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["selection.js"],
+      "css": ["selection.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "commands": {
+    "screenshot-area": {
+      "suggested_key": {
+        "default": "Alt+Shift+A"
+      },
+      "description": "Take screenshot of selected area"
+    }
   }
 }

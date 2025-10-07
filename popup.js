@@ -1,49 +1,44 @@
-const startBtn = document.getElementById('start');
-const stopBtn  = document.getElementById('stop');
-const shotBtn  = document.getElementById('screenshot');
-const statusEl = document.getElementById('status');
+document.addEventListener("DOMContentLoaded", () => {
+  const startBtn = document.getElementById("start-recording");
+  const stopBtn = document.getElementById("stop-recording");
+  const statusEl = document.getElementById("status");
+  const shotTabBtn = document.getElementById("screenshot-tab");
+  const shotAreaBtn = document.getElementById("screenshot-area");
 
-function updateUI(isRecording) {
-  if (isRecording) {
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
-    statusEl.textContent = '🔴 Recording';
-  } else {
-    startBtn.disabled = false;
-    stopBtn.disabled = true;
-    statusEl.textContent = '⏸ Ready';
+  function setUIRecording(isRec) {
+    startBtn.disabled = !!isRec;
+    stopBtn.disabled = !isRec;
+    statusEl.textContent = isRec ? "🔴 Recording" : "⏸ Ready";
   }
-}
 
-// При открытии popup сразу узнаем статус
-chrome.runtime.sendMessage({ action: 'get-status' }, (res) => {
-  if (res) updateUI(res.isRecording);
-});
+  // при открытии popup получаем статус
+  chrome.runtime.sendMessage({ action: "get-status" }, (res) => {
+    if (res && typeof res.isRecording === "boolean") setUIRecording(res.isRecording);
+  });
 
-startBtn.onclick = async () => {
-  if (!await chrome.offscreen.hasDocument()) {
-    await chrome.offscreen.createDocument({
-      url: 'offscreen.html',
-      reasons: ['USER_MEDIA'],
-      justification: 'Screen recording in background'
-    });
-  }
-  chrome.runtime.sendMessage({ action: 'start-recording' });
-  updateUI(true);
-};
+  // Нажали Start -> просим background создать offscreen и стартовать запись
+  startBtn.onclick = async () => {
+    const res = await chrome.runtime.sendMessage({ action: "start-recording" }).catch(() => null);
+    setUIRecording(true);
+  };
 
-stopBtn.onclick = () => {
-  chrome.runtime.sendMessage({ action: 'stop-recording' });
-  updateUI(false);
-};
+  // Нажали Stop -> просто шлем стоп (не создаём offscreen!)
+  stopBtn.onclick = async () => {
+    await chrome.runtime.sendMessage({ action: "stop-recording" }).catch(() => null);
+    setUIRecording(false);
+  };
 
-shotBtn.onclick = () => {
-  chrome.runtime.sendMessage({ action: 'take-screenshot' });
-};
+  shotTabBtn.onclick = () => {
+    chrome.runtime.sendMessage({ action: "take-screenshot-tab" });
+  };
 
-// ⚡️ слушаем события от background
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg.action === 'recording-stopped') {
-    updateUI(false);
-  }
+  // Для области посылаем команду в background — background гарантирует доставку в content script
+  shotAreaBtn.onclick = () => {
+    chrome.runtime.sendMessage({ action: "start-area-selection" });
+  };
+
+  // слушаем событие о том, что запись остановлена извне
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.action === "recording-stopped") setUIRecording(false);
+  });
 });
