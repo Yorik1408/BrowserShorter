@@ -1,0 +1,44 @@
+/* editor.css */
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: sans-serif;
+  background: #222;
+  color: #fff;
+}
+
+#toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  background: #111;
+  align-items: center;
+}
+
+#toolbar button {
+  background: #333;
+  color: #fff;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#toolbar input[type="number"] {
+  width: 60px;
+}
+
+#canvas-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: calc(100% - 56px);
+  background: #666;
+}
+
+#canvas {
+  background: white;
+  max-width: 100%;
+  max-height: 100%;
+  box-shadow: 0 0 8px rgba(0,0,0,0.6);
+}
