@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Screen Recorder & Screenshots",
   "version": "2.0",
-  "description": "Расширение для записи экрана и создания скриншотов (вкладка, область)",
+  "description": "Расширение для записи экрана и создания скриншотов с последующим редактированием (вкладка, область)",
   "permissions": [
     "tabCapture",
     "downloads",
@@ -16,7 +16,17 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Recorder"
+    "default_title": "Recorder",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "content_scripts": [
     {
