@@ -147,3 +147,16 @@ function drawArrow(ctx, x1, y1, x2, y2) {
   ctx.fillStyle = "red";
   ctx.fill();
 }
+
+document.getElementById("copyBtn").onclick = () => {
+  canvas.toBlob(blob => {
+    navigator.clipboard.write([
+      new ClipboardItem({ "image/png": blob })
+    ]).then(() => {
+      alert("Скриншот скопирован в буфер обмена!");
+    }).catch(err => {
+      console.error("Ошибка копирования:", err);
+      alert("Не удалось скопировать в буфер!");
+    });
+  });
+};
