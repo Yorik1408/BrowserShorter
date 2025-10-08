@@ -1,23 +1,25 @@
-// выбор области + отправка обрезанной картинки в background
-window.__screenshot = window.__screenshot || {};
-if (!window.__screenshot.initialized) {
-  window.__screenshot.initialized = true;
-  window.__screenshot.overlay = null;
-  window.__screenshot.box = null;
-  window.__screenshot.startX = 0;
-  window.__screenshot.startY = 0;
-  window.__screenshot.isSelecting = false;
+// selection.js — встраивается в страницу при запросе выделения области
+(function () {
+  if (window.__screenshot_injected) return;
+  window.__screenshot_injected = true;
+
+  let overlay = null;
+  let box = null;
+  let startX = 0, startY = 0;
 
   chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.action === "start-area-selection") startSelection();
-    if (msg.action === "crop-image" && msg.dataUrl && msg.rect) cropImageAndSend(msg.dataUrl, msg.rect);
+    if (msg.action === "start-area-selection") {
+      startSelection();
+    }
+    if (msg.action === "crop-image" && msg.dataUrl && msg.rect) {
+      cropImageAndSend(msg.dataUrl, msg.rect);
+    }
   });
 
   function startSelection() {
-    if (window.__screenshot.isSelecting) return;
-    window.__screenshot.isSelecting = true;
+    if (overlay) return;
 
-    const overlay = document.createElement("div");
+    overlay = document.createElement("div");
     overlay.id = "screenshot-overlay";
     overlay.style.position = "fixed";
     overlay.style.top = "0";
@@ -28,83 +30,100 @@ if (!window.__screenshot.initialized) {
     overlay.style.zIndex = "2147483647";
     overlay.style.cursor = "crosshair";
     document.documentElement.appendChild(overlay);
-    window.__screenshot.overlay = overlay;
 
-    overlay.addEventListener("mousedown", onMouseDown);
-
-    function onMouseDown(e) {
+    function onDown(e) {
       if (e.button !== 0) return;
-      window.__screenshot.startX = e.clientX;
-      window.__screenshot.startY = e.clientY;
+      startX = e.clientX;
+      startY = e.clientY;
 
-      const box = document.createElement("div");
+      box = document.createElement("div");
       box.id = "screenshot-selection";
       box.style.position = "absolute";
+      box.style.left = `${startX}px`;
+      box.style.top = `${startY}px`;
+      box.style.width = "0px";
+      box.style.height = "0px";
       box.style.border = "2px solid #4AD865";
       box.style.background = "rgba(74,216,101,0.2)";
-      box.style.left = `${window.__screenshot.startX}px`;
-      box.style.top = `${window.__screenshot.startY}px`;
       overlay.appendChild(box);
-      window.__screenshot.box = box;
-
-      function onMove(ev) {
-        const x = Math.min(ev.clientX, window.__screenshot.startX);
-        const y = Math.min(ev.clientY, window.__screenshot.startY);
-        const w = Math.abs(ev.clientX - window.__screenshot.startX);
-        const h = Math.abs(ev.clientY - window.__screenshot.startY);
-        box.style.left = `${x}px`;
-        box.style.top = `${y}px`;
-        box.style.width = `${w}px`;
-        box.style.height = `${h}px`;
-      }
-
-      function onUp(ev) {
-        overlay.removeEventListener("mousemove", onMove);
-        overlay.removeEventListener("mouseup", onUp);
-        overlay.removeEventListener("mousedown", onMouseDown);
-
-        const rect = box.getBoundingClientRect();
-        if (box) box.remove();
-        if (overlay) overlay.remove();
-        window.__screenshot.isSelecting = false;
-
-        const scale = window.devicePixelRatio || 1;
-        const scaledRect = {
-          left: Math.round(rect.left * scale),
-          top: Math.round(rect.top * scale),
-          width: Math.round(rect.width * scale),
-          height: Math.round(rect.height * scale)
-        };
-
-        chrome.runtime.sendMessage({ action: "area-selected", rect: scaledRect });
-      }
 
       overlay.addEventListener("mousemove", onMove);
       overlay.addEventListener("mouseup", onUp);
     }
 
+    function onMove(e) {
+      const x = Math.min(e.clientX, startX);
+      const y = Math.min(e.clientY, startY);
+      const w = Math.abs(e.clientX - startX);
+      const h = Math.abs(e.clientY - startY);
+      box.style.left = `${x}px`;
+      box.style.top = `${y}px`;
+      box.style.width = `${w}px`;
+      box.style.height = `${h}px`;
+    }
+
+    function onUp(e) {
+      overlay.removeEventListener("mousemove", onMove);
+      overlay.removeEventListener("mouseup", onUp);
+      overlay.removeEventListener("mousedown", onDown);
+
+      const rect = box.getBoundingClientRect();
+
+      // cleanup UI
+      if (box) box.remove();
+      if (overlay) overlay.remove();
+      box = null;
+      overlay = null;
+
+      // масштабируем в device pixels (captureVisibleTab возвращает device pixels)
+      const scale = window.devicePixelRatio || 1;
+      const scaledRect = {
+        x: Math.round(rect.left * scale),
+        y: Math.round(rect.top * scale),
+        width: Math.round(rect.width * scale),
+        height: Math.round(rect.height * scale)
+      };
+
+      // отправляем координаты в background — background сделает captureVisibleTab и пришлёт dataUrl обратно
+      chrome.runtime.sendMessage({ action: "area-selected", rect: scaledRect });
+    }
+
+    overlay.addEventListener("mousedown", onDown);
+
+    // отмена по Escape
     function onKey(e) {
       if (e.key === "Escape") {
-        if (window.__screenshot.box) window.__screenshot.box.remove();
-        if (window.__screenshot.overlay) window.__screenshot.overlay.remove();
-        window.__screenshot.isSelecting = false;
-        document.removeEventListener("keydown", onKey);
+        if (box) box.remove();
+        if (overlay) overlay.remove();
+        box = null;
+        overlay = null;
       }
+      document.removeEventListener("keydown", onKey);
     }
     document.addEventListener("keydown", onKey);
   }
 
+  // Получаем dataUrl от background и делаем финальный кроп в контексте страницы
   function cropImageAndSend(dataUrl, rect) {
     const img = new Image();
     img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = rect.width;
-      canvas.height = rect.height;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, rect.left, rect.top, rect.width, rect.height, 0, 0, rect.width, rect.height);
-      const croppedUrl = canvas.toDataURL("image/png");
-      chrome.runtime.sendMessage({ action: "save-cropped-screenshot", url: croppedUrl });
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+        const ctx = canvas.getContext("2d");
+        // dataUrl уже в device pixels — просто используем rect как есть
+        ctx.drawImage(img, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height);
+        const croppedUrl = canvas.toDataURL("image/png");
+        // отправляем обрезанную картинку в background (он откроет редактор)
+        chrome.runtime.sendMessage({ action: "save-cropped-screenshot", url: croppedUrl });
+      } catch (err) {
+        console.error("cropImageAndSend error:", err);
+      }
+    };
+    img.onerror = (e) => {
+      console.error("Failed to load image for cropping", e);
     };
     img.src = dataUrl;
   }
-}
+})();

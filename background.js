@@ -1,4 +1,7 @@
+// background.js
 let isRecording = false;
+let latestImageForEditor = null;
+let latestEditorWindowId = null;
 
 async function ensureOffscreenDocumentIfNeeded() {
   if (!chrome.offscreen) return false;
@@ -18,17 +21,17 @@ async function ensureOffscreenDocumentIfNeeded() {
   }
 }
 
-// открываем редактор и передаем dataURL скриншота
-function openEditorWithImage(dataUrl) {
+function openEditorWindow() {
+  // Открываем окно редактора и запомним его id
   chrome.windows.create({
-    url: "editor.html",
+    url: chrome.runtime.getURL("editor.html"),
     type: "popup",
     width: 1000,
     height: 700
   }, (win) => {
-    setTimeout(() => {
-      chrome.tabs.sendMessage(win.tabs[0].id, { action: "load-screenshot", url: dataUrl });
-    }, 300);
+    if (win && win.id) {
+      latestEditorWindowId = win.id;
+    }
   });
 }
 
@@ -57,7 +60,7 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
       return true;
     }
 
-    // === Screenshot Tab ===
+    // === Take screenshot (whole visible tab) ===
     if (msg.action === "take-screenshot-tab") {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" }, (dataUrl) => {
@@ -65,13 +68,15 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
           console.error("Screenshot tab failed:", chrome.runtime.lastError?.message);
           return;
         }
-        openEditorWithImage(dataUrl);
+        // Сохраняем снимок в памяти и открываем редактор — редактор запросит этот снимок сам
+        latestImageForEditor = dataUrl;
+        openEditorWindow();
       });
       sendResponse({ ok: true });
       return true;
     }
 
-    // === Start Area Selection ===
+    // === Start area selection: инжектим selection.js в текущую вкладку ===
     if (msg.action === "start-area-selection") {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab || !tab.id) {
@@ -81,13 +86,16 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
       try {
         await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["selection.js"] });
         await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["selection.css"] });
-      } catch (err) {}
+      } catch (err) {
+        // скрипт мог уже быть загружен — игнорируем ошибку
+      }
       chrome.tabs.sendMessage(tab.id, { action: "start-area-selection" });
       sendResponse({ ok: true });
       return true;
     }
 
-    // === Content script прислал координаты области ===
+    // === area-selected: content script присылает координаты (в device pixels) ===
+    // background делает captureVisibleTab и отправляет оригинальный dataUrl обратно в тот же таб
     if (msg.action === "area-selected" && msg.rect && sender.tab && sender.tab.id) {
       const tab = sender.tab;
       chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" }, (dataUrl) => {
@@ -95,16 +103,27 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
           console.error("captureVisibleTab failed:", chrome.runtime.lastError?.message);
           return;
         }
+        // Отправляем dataUrl и rect в content script (crop делается в страницном контексте)
         chrome.tabs.sendMessage(tab.id, { action: "crop-image", dataUrl, rect: msg.rect });
       });
       sendResponse({ ok: true });
       return true;
     }
 
-    // === Content script прислал уже обрезанную картинку ===
+    // === content script прислал уже обрезанную картинку (dataUrl) ===
+    // сохраняем ее как "последний" и открываем редактор
     if (msg.action === "save-cropped-screenshot" && msg.url) {
-      openEditorWithImage(msg.url);
+      latestImageForEditor = msg.url;
+      openEditorWindow();
       sendResponse({ ok: true });
+      return true;
+    }
+
+    // === Editor запрашивает картинку (когда загрузился) ===
+    if (msg.action === "request-image") {
+      // отправляем последнее изображение и id открытого окна редактора
+      sendResponse({ url: latestImageForEditor || null, windowId: latestEditorWindowId || null });
+      // не очищаем latestImageForEditor — даём повторно использовать при необходимости
       return true;
     }
 
@@ -113,14 +132,19 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
       chrome.downloads.download({
         url: msg.url,
         filename: `screenshot-${Date.now()}.png`
-      }, () => sendResponse({ ok: true }));
-      return true; // важно для асинхронного sendResponse
+      }, () => {
+        // после сохранения можно ответить
+        sendResponse({ ok: true });
+      });
+      return true; // нужно, т.к. sendResponse будет вызван асинхронно
     }
 
-    // === Offscreen видео ===
+    // === Offscreen: сохранить видео (dataURL) ===
     if (msg.action === "save-video" && msg.url) {
-      chrome.downloads.download({ url: msg.url, filename: `recording-${Date.now()}.webm` });
-      sendResponse({ ok: true });
+      chrome.downloads.download({
+        url: msg.url,
+        filename: `recording-${Date.now()}.webm`
+      }, () => sendResponse({ ok: true }));
       return true;
     }
 
