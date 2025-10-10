@@ -8,7 +8,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function setUIRecording(isRec) {
     startBtn.disabled = !!isRec;
     stopBtn.disabled = !isRec;
-    statusEl.textContent = isRec ? "🔴 Recording" : "⏸ Ready";
+    statusEl.textContent = isRec ? "🔴 Идет запись" : "⏸ Начать запись";
   }
 
   // при открытии popup получаем статус
