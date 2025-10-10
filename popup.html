@@ -15,12 +15,18 @@
   <button id="stop-recording" disabled>⏹ Закончить запись</button>
   <div id="status">⏸ Готов</div>
   <hr>
+
+  <label><input type="checkbox" id="record-mic" checked> 🎙 Записывать микрофон</label><br>
+  <label><input type="checkbox" id="record-system" checked> 🔊 Записывать системный звук</label>
+
+  <hr>
   <button id="screenshot-tab">📸 Скриншот вкладки</button>
   <button id="screenshot-area">🔲 Скриншот области</button>
+
   <p><small>Горячие клавиши по умолчанию:</small></p>
   <p><small>Alt+Shift+A - Скриншот всей вкладки</small></p>
   <p><small>Alt+Shift+S - Скриншот по области</small></p>
-  <p><small>Alt+Shift+R - Начать запись экрана</small></p>
+  <p><small>Alt+Shift+E - Начать запись экрана</small></p>
   <p><small>Alt+Shift+Q - Закончить запись экрана</small></p>
 
   <script src="popup.js"></script>

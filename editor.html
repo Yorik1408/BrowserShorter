@@ -1,29 +1,71 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
-<meta charset="UTF-8">
-<title>Screenshot Editor</title>
-<style>
-  html, body { margin: 0; padding: 0; overflow: hidden; }
-  #toolbar {
-    position: fixed;
-    top: 0; left: 0; width: 100%; height: 50px;
-    background: #333; color: #fff; display: flex; align-items: center; gap: 8px; padding: 4px;
-    z-index: 1000;
-  }
-  #toolbar button { padding: 4px 8px; cursor: pointer; }
-  canvas { display: block; margin-top: 50px; }
-</style>
+  <meta charset="UTF-8">
+  <title>Screenshot Editor</title>
+  <style>
+    body {
+      margin: 0;
+      background: #222;
+      color: white;
+      font-family: sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: #333;
+      padding: 10px;
+      border-bottom: 1px solid #444;
+      user-select: none;
+    }
+    button {
+      background: #444;
+      border: none;
+      color: white;
+      padding: 8px 14px;
+      cursor: pointer;
+      border-radius: 4px;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #555;
+    }
+    #colorPicker {
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border: none;
+      background: none;
+      cursor: pointer;
+    }
+    canvas {
+      flex: 1;
+      background: #111;
+      max-width: 100%;
+      max-height: calc(100vh - 60px);
+      cursor: crosshair;
+    }
+  </style>
 </head>
 <body>
-<div id="toolbar">
-  <button data-tool="pen">✏ Карандаш</button>
-  <button data-tool="arrow">➤ Стрелка</button>
-  <button data-tool="text">T Текст</button>
-  <button id="saveBtn">💾 Сохранить</button>
-  <button id="copyBtn">📋 Скопировать в буфер обмена</button>
-</div>
-<canvas id="editorCanvas"></canvas>
-<script src="editor.js"></script>
+  <div id="toolbar">
+    <input type="color" id="colorPicker" value="#ff0000" title="Цвет инструмента">
+    <button data-tool="pen">✏️ Карандаш</button>
+    <button data-tool="arrow">➡️ Стрелка</button>
+    <button data-tool="rectangle">⬛ Прямоугольник</button>
+    <button data-tool="text">🅰️ Текст</button>
+    <button id="saveBtn">💾 Сохранить</button>
+    <button id="copyBtn">📋 Копировать</button>
+  </div>
+  <canvas id="editorCanvas"></canvas>
+
+  <script src="editor.js"></script>
 </body>
 </html>

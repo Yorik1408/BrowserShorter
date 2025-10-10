@@ -42,7 +42,14 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
     if (msg.action === "start-recording") {
       await ensureOffscreenDocumentIfNeeded();
       isRecording = true;
-      chrome.runtime.sendMessage({ target: "offscreen", action: "start" });
+
+      // прокидываем флаги микрофона и системного звука
+      chrome.runtime.sendMessage({
+        target: "offscreen",
+        action: "start",
+        options: msg.options || { mic: true, system: true }
+      });
+
       sendResponse({ ok: true });
       return true;
     }
