@@ -69,24 +69,37 @@
 
       const rect = box.getBoundingClientRect();
 
-      // cleanup UI
-      if (box) box.remove();
-      if (overlay) overlay.remove();
-      box = null;
-      overlay = null;
+      // Плавно скрываем зелёную рамку перед захватом
+      if (box) {
+        box.style.transition = "opacity 0.15s ease-out";
+        box.style.opacity = "0";
+      }
+      if (overlay) {
+        overlay.style.transition = "opacity 0.15s ease-out";
+        overlay.style.opacity = "0";
+      }
 
-      // масштабируем в device pixels (captureVisibleTab возвращает device pixels)
-      const scale = window.devicePixelRatio || 1;
-      const scaledRect = {
-        x: Math.round(rect.left * scale),
-        y: Math.round(rect.top * scale),
-        width: Math.round(rect.width * scale),
-        height: Math.round(rect.height * scale)
-      };
+      // ждём немного, чтобы фон исчез с экрана
+      setTimeout(() => {
+        if (box && box.parentNode) box.parentNode.removeChild(box);
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        box = null;
+        overlay = null;
 
-      // отправляем координаты в background — background сделает captureVisibleTab и пришлёт dataUrl обратно
-      chrome.runtime.sendMessage({ action: "area-selected", rect: scaledRect });
+        // масштабируем в device pixels (captureVisibleTab возвращает device pixels)
+        const scale = window.devicePixelRatio || 1;
+        const scaledRect = {
+          x: Math.round(rect.left * scale),
+          y: Math.round(rect.top * scale),
+          width: Math.round(rect.width * scale),
+          height: Math.round(rect.height * scale)
+        };
+
+        // теперь можно отправлять координаты — оверлей уже исчез
+        chrome.runtime.sendMessage({ action: "area-selected", rect: scaledRect });
+      }, 160); // 160 мс — оптимально, чтобы фон точно исчез
     }
+
 
     overlay.addEventListener("mousedown", onDown);
 
@@ -126,4 +139,35 @@
     };
     img.src = dataUrl;
   }
+
+  // === ГОРЯЧИЕ КЛАВИШИ (резервный вариант) ===
+  document.addEventListener('keydown', (e) => {
+    // Alt + Shift + S → скриншот области
+    if (e.altKey && e.shiftKey && e.code === 'KeyS') {
+      e.preventDefault();
+      console.log('🔥 Hotkey: Screenshot Area');
+      chrome.runtime.sendMessage({ action: 'start-area-selection' });
+    }
+
+    // Alt + Shift + A → скриншот вкладки
+    if (e.altKey && e.shiftKey && e.code === 'KeyA') {
+      e.preventDefault();
+      console.log('🔥 Hotkey: Screenshot Tab');
+      chrome.runtime.sendMessage({ action: 'take-screenshot-tab' });
+    }
+
+    // Alt + Shift + E → начать запись
+    if (e.altKey && e.shiftKey && e.code === 'KeyE') {
+      e.preventDefault();
+      console.log('🔥 Hotkey: Start Recording');
+      chrome.runtime.sendMessage({ action: 'start-recording' });
+    }
+
+    // Alt + Shift + Q → остановить запись
+    if (e.altKey && e.shiftKey && e.code === 'KeyQ') {
+      e.preventDefault();
+      console.log('🔥 Hotkey: Stop Recording');
+      chrome.runtime.sendMessage({ action: 'stop-recording' });
+    }
+  });
 })();

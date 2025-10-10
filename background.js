@@ -2,6 +2,7 @@
 let isRecording = false;
 let latestImageForEditor = null;
 let latestEditorWindowId = null;
+console.log("Service worker loaded and ready for hotkeys 🚀");
 
 async function ensureOffscreenDocumentIfNeeded() {
   if (!chrome.offscreen) return false;
@@ -159,6 +160,32 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
   } catch (err) {
     console.error("background handler error:", err);
   }
+
+  chrome.commands.onCommand.addListener(async (command) => {
+    console.log("Hotkey pressed:", command);
+
+    if (command === "screenshot-area") {
+      chrome.runtime.sendMessage({ action: "start-area-selection" });
+    }
+
+    if (command === "screenshot-tab") {
+      chrome.runtime.sendMessage({ action: "take-screenshot-tab" });
+    }
+
+    if (command === "toggle-recording") {
+      // узнаем статус записи
+      const status = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: "get-status" }, resolve);
+      });
+
+      if (status && status.isRecording) {
+        chrome.runtime.sendMessage({ action: "stop-recording" });
+      } else {
+        chrome.runtime.sendMessage({ action: "start-recording" });
+      }
+    }
+  });
+
 
   return false;
 });

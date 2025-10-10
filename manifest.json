@@ -9,7 +9,8 @@
     "activeTab",
     "scripting",
     "tabs",
-    "offscreen"
+    "offscreen",
+    "storage"
   ],
   "background": {
     "service_worker": "background.js"
@@ -42,9 +43,21 @@
   "commands": {
     "screenshot-area": {
       "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "Скриншот области"
+    },
+    "screenshot-tab": {
+      "suggested_key": {
         "default": "Alt+Shift+A"
       },
-      "description": "Take screenshot of selected area"
+      "description": "Скриншот вкладки"
+    },
+    "toggle-recording": {
+      "suggested_key": {
+        "default": "Alt+Shift+R"
+      },
+      "description": "Старт/стоп записи"
     }
   }
 }
