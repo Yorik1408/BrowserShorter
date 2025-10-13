@@ -57,9 +57,29 @@ document.querySelectorAll("#toolbar button[data-tool]").forEach(btn => {
   btn.onclick = () => { currentTool = btn.dataset.tool; };
 });
 
+// === Сохранение с автогенерацией имени ===
 document.getElementById("saveBtn").onclick = () => {
+  // создаём имя файла
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
+  const fileName = `Screenshot_${timestamp}.png`;
+
   const url = canvas.toDataURL("image/png");
-  chrome.runtime.sendMessage({ action: "save-screenshot", url });
+
+  chrome.runtime.sendMessage({ action: "save-screenshot", url, filename: fileName }, (resp) => {
+    if (chrome.runtime.lastError) {
+      console.error("Save failed:", chrome.runtime.lastError.message);
+      return;
+    }
+    if (resp && resp.ok) {
+      chrome.runtime.sendMessage({ action: "request-image" }, (r) => {
+        const winId = r && r.windowId;
+        if (winId) chrome.windows.remove(winId);
+        else window.close();
+      });
+    }
+  });
 };
 
 chrome.runtime.sendMessage({ action: "request-image" }, (resp) => {

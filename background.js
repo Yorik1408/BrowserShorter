@@ -137,9 +137,10 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
 
     // === Editor Save Screenshot ===
     if (msg.action === "save-screenshot" && msg.url) {
+      const filename = msg.filename || `screenshot-${Date.now()}.png`;
       chrome.downloads.download({
         url: msg.url,
-        filename: `screenshot-${Date.now()}.png`
+        filename
       }, () => {
         // после сохранения можно ответить
         sendResponse({ ok: true });
@@ -149,11 +150,17 @@ chrome.runtime.onMessage.addListener(async (msg, sender, sendResponse) => {
 
     // === Offscreen: сохранить видео (dataURL) ===
     if (msg.action === "save-video" && msg.url) {
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
+      const filename = `Recording_${timestamp}.webm`;
+
       chrome.downloads.download({
         url: msg.url,
-        filename: `recording-${Date.now()}.webm`
+        filename
       }, () => sendResponse({ ok: true }));
-      return true;
+
+      return true; // важно для асинхронного ответа
     }
 
     // === Offscreen сообщает, что запись остановлена ===
