@@ -2,20 +2,21 @@
 const canvas = document.getElementById("editorCanvas");
 const ctx = canvas.getContext("2d");
 let currentTool = "pen";
-let currentColor = "#ff0000"; // по умолчанию красный
+let currentColor = "#ff0000";
 let drawing = false;
 let startX = 0, startY = 0;
 let editorWindowId = null;
 let bgImage = new Image();
+let baseImageData = null; // <=== снимок текущего состояния
 let tempRect = null;
 
-// цветовой пикер
+// === Палитра ===
 const colorPicker = document.getElementById("colorPicker");
 colorPicker.addEventListener("input", (e) => {
   currentColor = e.target.value;
 });
 
-// подгоняем canvas под окно
+// === Размер canvas ===
 function fitCanvasToWindow() {
   canvas.style.width = window.innerWidth + "px";
   canvas.style.height = (window.innerHeight - 50) + "px";
@@ -23,12 +24,12 @@ function fitCanvasToWindow() {
 fitCanvasToWindow();
 window.addEventListener("resize", fitCanvasToWindow);
 
-// toolbar
+// === Панель инструментов ===
 document.querySelectorAll("#toolbar button[data-tool]").forEach(btn => {
   btn.onclick = () => { currentTool = btn.dataset.tool; };
 });
 
-// Save
+// === Сохранение ===
 document.getElementById("saveBtn").onclick = () => {
   const url = canvas.toDataURL("image/png");
   chrome.runtime.sendMessage({ action: "save-screenshot", url }, (resp) => {
@@ -46,7 +47,7 @@ document.getElementById("saveBtn").onclick = () => {
   });
 };
 
-// Получаем изображение от background
+// === Получаем изображение для редактирования ===
 chrome.runtime.sendMessage({ action: "request-image" }, (resp) => {
   if (!resp || !resp.url) return;
   editorWindowId = resp.windowId || null;
@@ -55,13 +56,14 @@ chrome.runtime.sendMessage({ action: "request-image" }, (resp) => {
     canvas.width = bgImage.naturalWidth;
     canvas.height = bgImage.naturalHeight;
     ctx.drawImage(bgImage, 0, 0);
+    baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     canvas.style.maxWidth = "100%";
     canvas.style.maxHeight = "calc(100% - 50px)";
   };
   bgImage.src = resp.url;
 });
 
-// конвертация координат
+// === Помощник для координат ===
 function clientToCanvasCoords(e) {
   const rect = canvas.getBoundingClientRect();
   const x = (e.clientX - rect.left) * (canvas.width / rect.width);
@@ -83,6 +85,7 @@ canvas.addEventListener("mousedown", (e) => {
       const fontSize = Math.max(12, Math.round(canvas.width * 0.02));
       ctx.font = `${fontSize}px sans-serif`;
       ctx.fillText(text, startX, startY);
+      baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     }
     drawing = false;
   }
@@ -96,6 +99,8 @@ canvas.addEventListener("mousedown", (e) => {
   }
 
   if (currentTool === "rectangle") {
+    // Сохраняем текущее состояние перед началом рисования
+    baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     tempRect = { x: startX, y: startY, w: 0, h: 0 };
   }
 });
@@ -110,13 +115,16 @@ canvas.addEventListener("mousemove", (e) => {
   }
 
   if (currentTool === "rectangle" && tempRect) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(bgImage, 0, 0);
     const w = pos.x - startX;
     const h = pos.y - startY;
+
+    // Восстанавливаем картинку перед отрисовкой текущего прямоугольника
+    ctx.putImageData(baseImageData, 0, 0);
+
     ctx.lineWidth = Math.max(2, Math.round(canvas.width * 0.0025));
     ctx.strokeStyle = currentColor;
     ctx.strokeRect(startX, startY, w, h);
+
     tempRect.w = w;
     tempRect.h = h;
   }
@@ -137,12 +145,15 @@ canvas.addEventListener("mouseup", (e) => {
     ctx.strokeStyle = currentColor;
     ctx.strokeRect(startX, startY, w, h);
     tempRect = null;
+
+    // фиксируем текущее состояние — теперь этот прямоугольник "навсегда"
+    baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   }
 
   drawing = false;
 });
 
-// helper — стрелка
+// === Стрелки ===
 function drawArrow(ctx, x1, y1, x2, y2) {
   const headlen = Math.max(8, Math.round(canvas.width * 0.01));
   const dx = x2 - x1;
@@ -162,9 +173,12 @@ function drawArrow(ctx, x1, y1, x2, y2) {
   ctx.lineTo(x2, y2);
   ctx.fillStyle = currentColor;
   ctx.fill();
+
+  // фиксируем текущее состояние
+  baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
-// === Копирование ===
+// === Копировать ===
 document.getElementById("copyBtn").onclick = () => {
   canvas.toBlob(blob => {
     navigator.clipboard.write([
