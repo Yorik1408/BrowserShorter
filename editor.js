@@ -10,7 +10,8 @@ let editorWindowId = null;
 let bgImage = new Image();
 let baseImageData = null;
 let tempRect = null;
-let circleCounter = 1; // счётчик для кругов с номерами
+let circleCounter = 1;
+let cropRect = null;
 
 const undoStack = [];
 const redoStack = [];
@@ -59,14 +60,12 @@ document.querySelectorAll("#toolbar button[data-tool]").forEach(btn => {
 
 // === Сохранение с автогенерацией имени ===
 document.getElementById("saveBtn").onclick = () => {
-  // создаём имя файла
   const now = new Date();
   const pad = (n) => String(n).padStart(2, "0");
   const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
   const fileName = `Screenshot_${timestamp}.png`;
 
   const url = canvas.toDataURL("image/png");
-
   chrome.runtime.sendMessage({ action: "save-screenshot", url, filename: fileName }, (resp) => {
     if (chrome.runtime.lastError) {
       console.error("Save failed:", chrome.runtime.lastError.message);
@@ -136,12 +135,11 @@ canvas.addEventListener("mousedown", (e) => {
     }
   }
 
-  if (currentTool === "rectangle") {
+  if (currentTool === "rectangle" || currentTool === "crop") {
     baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     tempRect = { x: startX, y: startY, w: 0, h: 0 };
   }
 
-  // === новый инструмент: круг с цифрой ===
   if (currentTool === "circle-number") {
     drawNumberCircle(pos.x, pos.y);
     saveState();
@@ -157,13 +155,14 @@ canvas.addEventListener("mousemove", (e) => {
     ctx.stroke();
   }
 
-  if (currentTool === "rectangle" && tempRect) {
+  if ((currentTool === "rectangle" || currentTool === "crop") && tempRect) {
     const w = pos.x - startX;
     const h = pos.y - startY;
     ctx.putImageData(baseImageData, 0, 0);
     ctx.lineWidth = Math.max(2, Math.round(canvas.width * 0.0025));
-    ctx.strokeStyle = currentColor;
+    ctx.strokeStyle = currentTool === "crop" ? "#00BFFF" : currentColor;
     ctx.strokeRect(startX, startY, w, h);
+    tempRect = { x: startX, y: startY, w, h };
   }
 });
 
@@ -187,6 +186,8 @@ canvas.addEventListener("mouseup", (e) => {
     tempRect = null;
     baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     saveState();
+  } else if (currentTool === "crop" && tempRect) {
+    performCrop(tempRect);
   }
 
   drawing = false;
@@ -219,7 +220,6 @@ function drawNumberCircle(x, y) {
   const number = circleCounter;
   circleCounter = circleCounter >= 99 ? 1 : circleCounter + 1;
 
-  // круг
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fillStyle = currentColor;
@@ -228,12 +228,27 @@ function drawNumberCircle(x, y) {
   ctx.strokeStyle = "#fff";
   ctx.stroke();
 
-  // цифра
   ctx.fillStyle = "#fff";
   ctx.font = `${radius * 1.2}px sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(number.toString(), x, y);
+}
+
+// === обрезка ===
+function performCrop(rect) {
+  const { x, y, w, h } = rect;
+  if (w <= 0 || h <= 0) return;
+
+  saveState();
+  const imageData = ctx.getImageData(x, y, w, h);
+  canvas.width = w;
+  canvas.height = h;
+  ctx.putImageData(imageData, 0, 0);
+  bgImage.src = canvas.toDataURL();
+  baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  tempRect = null;
+  saveState();
 }
 
 document.getElementById("copyBtn").onclick = () => {
