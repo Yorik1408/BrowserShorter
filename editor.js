@@ -1,14 +1,42 @@
 // editor.js
 const canvas = document.getElementById("editorCanvas");
-const ctx = canvas.getContext("2d");
+const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+
 let currentTool = "pen";
 let currentColor = "#ff0000";
 let drawing = false;
 let startX = 0, startY = 0;
 let editorWindowId = null;
 let bgImage = new Image();
-let baseImageData = null; // <=== снимок текущего состояния
+let baseImageData = null;
 let tempRect = null;
+
+// === История состояний ===
+const undoStack = [];
+const redoStack = [];
+
+function saveState() {
+  undoStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+  if (undoStack.length > 20) undoStack.shift();
+  redoStack.length = 0;
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  const last = undoStack.pop();
+  redoStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+  ctx.putImageData(last, 0, 0);
+  baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+function redo() {
+  if (redoStack.length === 0) return;
+  const next = redoStack.pop();
+  undoStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+  ctx.putImageData(next, 0, 0);
+  baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
 
 // === Палитра ===
 const colorPicker = document.getElementById("colorPicker");
@@ -16,7 +44,11 @@ colorPicker.addEventListener("input", (e) => {
   currentColor = e.target.value;
 });
 
-// === Размер canvas ===
+// === Undo / Redo кнопки ===
+document.getElementById("undoBtn").onclick = undo;
+document.getElementById("redoBtn").onclick = redo;
+
+// === Canvas ===
 function fitCanvasToWindow() {
   canvas.style.width = window.innerWidth + "px";
   canvas.style.height = (window.innerHeight - 50) + "px";
@@ -24,7 +56,7 @@ function fitCanvasToWindow() {
 fitCanvasToWindow();
 window.addEventListener("resize", fitCanvasToWindow);
 
-// === Панель инструментов ===
+// === Инструменты ===
 document.querySelectorAll("#toolbar button[data-tool]").forEach(btn => {
   btn.onclick = () => { currentTool = btn.dataset.tool; };
 });
@@ -47,7 +79,7 @@ document.getElementById("saveBtn").onclick = () => {
   });
 };
 
-// === Получаем изображение для редактирования ===
+// === Получаем изображение ===
 chrome.runtime.sendMessage({ action: "request-image" }, (resp) => {
   if (!resp || !resp.url) return;
   editorWindowId = resp.windowId || null;
@@ -57,13 +89,14 @@ chrome.runtime.sendMessage({ action: "request-image" }, (resp) => {
     canvas.height = bgImage.naturalHeight;
     ctx.drawImage(bgImage, 0, 0);
     baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    saveState();
     canvas.style.maxWidth = "100%";
     canvas.style.maxHeight = "calc(100% - 50px)";
   };
   bgImage.src = resp.url;
 });
 
-// === Помощник для координат ===
+// === Координаты ===
 function clientToCanvasCoords(e) {
   const rect = canvas.getBoundingClientRect();
   const x = (e.clientX - rect.left) * (canvas.width / rect.width);
@@ -85,7 +118,7 @@ canvas.addEventListener("mousedown", (e) => {
       const fontSize = Math.max(12, Math.round(canvas.width * 0.02));
       ctx.font = `${fontSize}px sans-serif`;
       ctx.fillText(text, startX, startY);
-      baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      saveState();
     }
     drawing = false;
   }
@@ -99,7 +132,6 @@ canvas.addEventListener("mousedown", (e) => {
   }
 
   if (currentTool === "rectangle") {
-    // Сохраняем текущее состояние перед началом рисования
     baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     tempRect = { x: startX, y: startY, w: 0, h: 0 };
   }
@@ -117,14 +149,10 @@ canvas.addEventListener("mousemove", (e) => {
   if (currentTool === "rectangle" && tempRect) {
     const w = pos.x - startX;
     const h = pos.y - startY;
-
-    // Восстанавливаем картинку перед отрисовкой текущего прямоугольника
     ctx.putImageData(baseImageData, 0, 0);
-
     ctx.lineWidth = Math.max(2, Math.round(canvas.width * 0.0025));
     ctx.strokeStyle = currentColor;
     ctx.strokeRect(startX, startY, w, h);
-
     tempRect.w = w;
     tempRect.h = h;
   }
@@ -136,8 +164,10 @@ canvas.addEventListener("mouseup", (e) => {
 
   if (currentTool === "arrow") {
     drawArrow(ctx, startX, startY, pos.x, pos.y);
+    saveState();
   } else if (currentTool === "pen") {
     ctx.closePath();
+    saveState();
   } else if (currentTool === "rectangle" && tempRect) {
     const w = pos.x - startX;
     const h = pos.y - startY;
@@ -145,9 +175,8 @@ canvas.addEventListener("mouseup", (e) => {
     ctx.strokeStyle = currentColor;
     ctx.strokeRect(startX, startY, w, h);
     tempRect = null;
-
-    // фиксируем текущее состояние — теперь этот прямоугольник "навсегда"
     baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    saveState();
   }
 
   drawing = false;
@@ -173,12 +202,9 @@ function drawArrow(ctx, x1, y1, x2, y2) {
   ctx.lineTo(x2, y2);
   ctx.fillStyle = currentColor;
   ctx.fill();
-
-  // фиксируем текущее состояние
-  baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
-// === Копировать ===
+// === Копирование ===
 document.getElementById("copyBtn").onclick = () => {
   canvas.toBlob(blob => {
     navigator.clipboard.write([
