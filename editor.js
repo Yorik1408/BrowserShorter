@@ -8,12 +8,13 @@ let drawing = false;
 let startX = 0, startY = 0;
 let editorWindowId = null;
 let bgImage = new Image();
+let imgNaturalWidth = 0, imgNaturalHeight = 0;
 let baseImageData = null;
 let tempRect = null;
 let circleCounter = 1;
-let cropRect = null;
-let brushSize = 25; // влияет на pen, marker, blur-brush
-let markerOpacity = 0.1; // 0.0–1.0
+let brushSize = 25;
+let markerOpacity = 0.1;
+let displayScale = 1;
 
 const sizeSlider = document.getElementById("sizeSlider");
 const sizeValue = document.getElementById("sizeValue");
@@ -32,135 +33,113 @@ opacitySlider.addEventListener("input", (e) => {
 
 const undoStack = [];
 const redoStack = [];
-
-// новые стеки для типов действий
-const actionStack = [];       // параллелен undoStack
-const redoActionStack = [];   // параллелен redoStack
+const actionStack = [];
+const redoActionStack = [];
 
 // === Undo / Redo ===
 function saveState(type = 'generic') {
   const snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const last = undoStack[undoStack.length - 1];
-
-  // добавляем только если картинка реально изменилась (или нет last)
-  if (!last || !imageDataEquals(last, snapshot)) {
-    undoStack.push(snapshot);
-    actionStack.push(type);
-    if (undoStack.length > 60) { // немного увеличил лимит
-      undoStack.shift();
-      actionStack.shift();
-    }
-    // новый action => очищаем redo
-    redoStack.length = 0;
-    redoActionStack.length = 0;
-  }
-}
-
-// Быстрая проверка равенства (не сравниваем каждый байт — выбираем шаг)
-function imageDataEquals(a, b) {
-  if (!a || !b || a.data.length !== b.data.length) return false;
-  // для производительности сравниваем выборочно:
-  const step = Math.max(1, Math.floor(a.data.length / 5000));
-  for (let i = 0; i < a.data.length; i += step) {
-    if (a.data[i] !== b.data[i]) return false;
-  }
-  return true;
+  undoStack.push(snapshot);
+  actionStack.push(type);
+  if (undoStack.length > 60) { undoStack.shift(); actionStack.shift(); }
+  redoStack.length = 0;
+  redoActionStack.length = 0;
 }
 
 function undo() {
-  if (undoStack.length < 2) return; // нужно хотя бы 2 состояния (текущее + предыдущее)
-  const current = undoStack.pop(); // убираем текущее
-  const currentAction = actionStack.pop(); // тип текущего
+  if (undoStack.length < 2) return;
+  const current = undoStack.pop();
+  const currentAction = actionStack.pop();
   redoStack.push(current);
   redoActionStack.push(currentAction);
-
-  const prev = undoStack[undoStack.length - 1]; // предыдущее состояние
+  const prev = undoStack[undoStack.length - 1];
   ctx.putImageData(prev, 0, 0);
-
-  // скорректируем побочные значения в зависимости от типа
-  if (currentAction === 'circle-number') {
-    // отменили добавление номера — нужно уменьшить счётчик
-    if (circleCounter > 1) circleCounter--;
-  }
-  // можно добавить другие типы, если надо
-
-  // обновим базовый снимок
+  if (currentAction === 'circle-number' && circleCounter > 1) circleCounter--;
   baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
 function redo() {
-  if (redoStack.length === 0) return;
+  if (!redoStack.length) return;
   const next = redoStack.pop();
   const nextAction = redoActionStack.pop();
-
   undoStack.push(next);
   actionStack.push(nextAction);
-
   ctx.putImageData(next, 0, 0);
-
-  // если операция была circle-number — восстановим счётчик
-  if (nextAction === 'circle-number') {
-    circleCounter = (circleCounter >= 99) ? 1 : circleCounter + 1;
-  }
-
+  if (nextAction === 'circle-number') circleCounter++;
   baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
 // === Палитра ===
-const colorPicker = document.getElementById("colorPicker");
-colorPicker.addEventListener("input", (e) => {
-  currentColor = e.target.value;
-});
-
+document.getElementById("colorPicker").addEventListener("input", (e) => currentColor = e.target.value);
 document.getElementById("undoBtn").onclick = undo;
 document.getElementById("redoBtn").onclick = redo;
 
-// === Canvas ===
-function fitCanvasToWindow() {
-  canvas.style.width = window.innerWidth + "px";
-  canvas.style.height = (window.innerHeight - 50) + "px";
-}
-fitCanvasToWindow();
-window.addEventListener("resize", fitCanvasToWindow);
-
-document.querySelectorAll("#toolbar button[data-tool]").forEach(btn => {
-  btn.onclick = () => { currentTool = btn.dataset.tool; };
-});
-
-// === Сохранение ===
-document.getElementById("saveBtn").onclick = () => {
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
-  const fileName = `Screenshot_${timestamp}.png`;
-
-  const url = canvas.toDataURL("image/png");
-  chrome.runtime.sendMessage({ action: "save-screenshot", url, filename: fileName });
-};
-
-// === Получаем картинку ===
+// === Загрузка изображения ===
 chrome.runtime.sendMessage({ action: "request-image" }, (resp) => {
   if (!resp || !resp.url) return;
   editorWindowId = resp.windowId || null;
+
   bgImage = new Image();
   bgImage.onload = () => {
-    canvas.width = bgImage.naturalWidth;
-    canvas.height = bgImage.naturalHeight;
-    ctx.drawImage(bgImage, 0, 0);
-    baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    // начальное состояние - помечаем 'init'
+    imgNaturalWidth = bgImage.naturalWidth;
+    imgNaturalHeight = bgImage.naturalHeight;
+    resizeCanvasToFit();
+    drawBaseImage();
     saveState('init');
   };
   bgImage.src = resp.url;
 });
 
-// === Мышь и координаты ===
+// === Масштабирование Canvas под окно ===
+function resizeCanvasToFit() {
+  if (!imgNaturalWidth || !imgNaturalHeight) return;
+
+  const imgAspect = imgNaturalWidth / imgNaturalHeight;
+  const windowAspect = window.innerWidth / (window.innerHeight - 50);
+  let displayWidth, displayHeight;
+
+  if (windowAspect > imgAspect) {
+    displayHeight = window.innerHeight - 50;
+    displayWidth = displayHeight * imgAspect;
+  } else {
+    displayWidth = window.innerWidth;
+    displayHeight = displayWidth / imgAspect;
+  }
+
+  canvas.width = displayWidth * window.devicePixelRatio;
+  canvas.height = displayHeight * window.devicePixelRatio;
+  canvas.style.width = displayWidth + "px";
+  canvas.style.height = displayHeight + "px";
+
+  displayScale = canvas.width / imgNaturalWidth;
+  ctx.setTransform(displayScale, 0, 0, displayScale, 0, 0);
+}
+
+function drawBaseImage() {
+  ctx.setTransform(displayScale, 0, 0, displayScale, 0, 0);
+  ctx.clearRect(0, 0, imgNaturalWidth, imgNaturalHeight);
+  ctx.drawImage(bgImage, 0, 0, imgNaturalWidth, imgNaturalHeight);
+  baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+window.addEventListener("resize", () => {
+  if (!imgNaturalWidth) return;
+  resizeCanvasToFit();
+  drawBaseImage();
+});
+
+// === Конвертация координат ===
 function clientToCanvasCoords(e) {
   const rect = canvas.getBoundingClientRect();
-  const x = (e.clientX - rect.left) * (canvas.width / rect.width);
-  const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+  const x = ((e.clientX - rect.left) / rect.width) * imgNaturalWidth;
+  const y = ((e.clientY - rect.top) / rect.height) * imgNaturalHeight;
   return { x, y };
 }
+
+// === Инструменты ===
+document.querySelectorAll("#toolbar button[data-tool]").forEach(btn => {
+  btn.onclick = () => { currentTool = btn.dataset.tool; };
+});
 
 let blurRadius = brushSize;
 
@@ -171,10 +150,7 @@ canvas.addEventListener("mousedown", (e) => {
   startY = pos.y;
 
   if (["blur", "blur-brush"].includes(currentTool)) {
-    // сохраняем состояние ДО начала размытия (один раз)
-    saveState(); // generic save; for blur-brush we'll log type after finishing => but to keep consistency we can mark as 'blur' here
-    // однако лучше пометить как 'blur' now:
-    actionStack[actionStack.length - 1] = 'blur'; // пометим только что сохранённый элемент как 'blur'
+    saveState('blur');
     baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   }
 
@@ -194,16 +170,9 @@ canvas.addEventListener("mousedown", (e) => {
     ctx.beginPath();
     ctx.moveTo(startX, startY);
     ctx.lineCap = "round";
-
-    if (currentTool === "marker") {
-      ctx.globalAlpha = markerOpacity;
-      ctx.lineWidth = brushSize;
-      ctx.strokeStyle = currentColor === "#ff0000" ? "#FFD500" : currentColor;
-    } else {
-      ctx.globalAlpha = 1.0;
-      ctx.lineWidth = brushSize / 2;
-      ctx.strokeStyle = currentColor;
-    }
+    ctx.globalAlpha = currentTool === "marker" ? markerOpacity : 1.0;
+    ctx.lineWidth = currentTool === "marker" ? brushSize : brushSize / 2;
+    ctx.strokeStyle = currentColor;
   }
 
   if (["rectangle", "crop", "blur"].includes(currentTool)) {
@@ -212,8 +181,7 @@ canvas.addEventListener("mousedown", (e) => {
   }
 
   if (currentTool === "circle-number") {
-    // рисуем цифру и сразу сохраняем состояние с типом 'circle-number'
-    drawNumberCircle(startX, startY); // использует current circleCounter
+    drawNumberCircle(startX, startY);
     saveState('circle-number');
   }
 });
@@ -230,7 +198,6 @@ canvas.addEventListener("mousemove", (e) => {
   if (["rectangle", "crop", "blur"].includes(currentTool) && tempRect) {
     const w = pos.x - startX;
     const h = pos.y - startY;
-    // рисуем "эскиз" поверх сохранённого baseImageData
     ctx.putImageData(baseImageData, 0, 0);
     ctx.lineWidth = 2;
     ctx.strokeStyle = currentTool === "blur" ? "#888" : (currentTool === "crop" ? "#00BFFF" : currentColor);
@@ -239,8 +206,6 @@ canvas.addEventListener("mousemove", (e) => {
   }
 
   if (currentTool === "blur-brush") {
-    // при первом движении blur-brush мы уже сделали saveState в mousedown,
-    // поэтому здесь просто применяем эффект (не сохраняем каждый кадр)
     applyBlurCircle(pos.x, pos.y, brushSize);
   }
 });
@@ -264,64 +229,41 @@ canvas.addEventListener("mouseup", (e) => {
     saveState('rect');
   } else if (currentTool === "crop" && tempRect) {
     performCrop(tempRect);
-    // performCrop делает saveState внутри (с типом 'crop')
   } else if (currentTool === "blur" && tempRect) {
     applyBlurOnce(tempRect);
     saveState('blur');
+  } else if (currentTool === "blur-brush") {
+    saveState('blur-brush');
   }
 
-  // если использовалась кисть размытия — фиксируем результат одного сеанса как 'blur-brush'
-  if (currentTool === "blur-brush") {
-    // Пометим последний snapshot (который был сделан в mousedown) как 'blur-brush'
-    // Если в mousedown мы ранее записали generic, перезапишем тип:
-    if (actionStack.length > 0) {
-      actionStack[actionStack.length - 1] = 'blur-brush';
-    }
-    saveState(); // фиксируем ИТОГОВОЕ состояние после кисти (можем пометить как generic или 'blur-brush')
-    // вместо второго saveState можно пометить последний как 'blur-brush' и не дублировать состояние,
-    // но для простоты сейчас мы сохраняем итоговый снимок как отдельный этап:
-    actionStack[actionStack.length - 1] = 'blur-brush';
-  }
-
-  // обновляем базовый снимок
   baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   tempRect = null;
 });
 
-// === Размытие-прямоугольник ===
+// === Размытие ===
 function applyBlurOnce(rect) {
   const { x, y, w, h } = rect;
-  if (w <= 0 || h <= 0) return;
-
-  const tempCanvas = document.createElement("canvas");
-  const tCtx = tempCanvas.getContext("2d");
-  tempCanvas.width = Math.abs(w);
-  tempCanvas.height = Math.abs(h);
-
-  // учтём знак w/h (если рисовали влево/вверх)
+  if (w === 0 || h === 0) return;
   const sx = w < 0 ? x + w : x;
   const sy = h < 0 ? y + h : y;
-  const aw = Math.abs(w);
-  const ah = Math.abs(h);
-
+  const aw = Math.abs(w), ah = Math.abs(h);
+  const tempCanvas = document.createElement("canvas");
+  const tCtx = tempCanvas.getContext("2d");
+  tempCanvas.width = aw;
+  tempCanvas.height = ah;
   tCtx.drawImage(canvas, sx, sy, aw, ah, 0, 0, aw, ah);
-
   ctx.save();
   ctx.filter = "blur(6px)";
   ctx.drawImage(tempCanvas, sx, sy);
   ctx.restore();
 }
 
-// === Кисть размытия ===
 function applyBlurCircle(x, y, radius) {
   const tempCanvas = document.createElement("canvas");
   const tCtx = tempCanvas.getContext("2d");
-  const r2 = radius * 2;
-  tempCanvas.width = r2;
-  tempCanvas.height = r2;
-
-  tCtx.drawImage(canvas, x - radius, y - radius, r2, r2, 0, 0, r2, r2);
-
+  tempCanvas.width = radius * 2;
+  tempCanvas.height = radius * 2;
+  tCtx.drawImage(canvas, x - radius, y - radius, radius * 2, radius * 2, 0, 0, radius * 2, radius * 2);
   ctx.save();
   ctx.filter = "blur(5px)";
   ctx.beginPath();
@@ -335,24 +277,21 @@ function applyBlurCircle(x, y, radius) {
 function performCrop(rect) {
   const { x, y, w, h } = rect;
   if (w === 0 || h === 0) return;
-
-  // нормализуем прямоугольник
   const sx = w < 0 ? x + w : x;
   const sy = h < 0 ? y + h : y;
-  const aw = Math.abs(w);
-  const ah = Math.abs(h);
-
+  const aw = Math.abs(w), ah = Math.abs(h);
   saveState('crop');
-
   const imageData = ctx.getImageData(sx, sy, aw, ah);
-  canvas.width = aw;
-  canvas.height = ah;
+  imgNaturalWidth = aw;
+  imgNaturalHeight = ah;
+  canvas.width = aw * window.devicePixelRatio;
+  canvas.height = ah * window.devicePixelRatio;
+  ctx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
   ctx.putImageData(imageData, 0, 0);
   baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  tempRect = null;
 }
 
-// === Остальное ===
+// === Остальные инструменты ===
 function drawArrow(ctx, x1, y1, x2, y2) {
   const headlen = Math.max(8, Math.round(canvas.width * 0.01));
   const dx = x2 - x1, dy = y2 - y1;
@@ -374,9 +313,7 @@ function drawArrow(ctx, x1, y1, x2, y2) {
 function drawNumberCircle(x, y) {
   const radius = Math.max(14, Math.round(canvas.width * 0.015));
   const number = circleCounter;
-  // увеличиваем счётчик для следующего номера
   circleCounter = circleCounter >= 99 ? 1 : circleCounter + 1;
-
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fillStyle = currentColor;
@@ -391,17 +328,21 @@ function drawNumberCircle(x, y) {
   ctx.fillText(number.toString(), x, y);
 }
 
-// === Кнопка Копировать ===
+// === Сохранить и копировать ===
+document.getElementById("saveBtn").onclick = () => {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const timestamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
+  const fileName = `Screenshot_${timestamp}.png`;
+  const url = canvas.toDataURL("image/png");
+  chrome.runtime.sendMessage({ action: "save-screenshot", url, filename: fileName });
+};
+
 document.getElementById("copyBtn").onclick = () => {
   canvas.toBlob(blob => {
-    navigator.clipboard.write([
-      new ClipboardItem({ "image/png": blob })
-    ]).then(() => {
-      alert("Скриншот скопирован в буфер обмена!");
-    }).catch(err => {
-      console.error("Ошибка копирования:", err);
-      alert("Не удалось скопировать в буфер!");
-    });
+    navigator.clipboard.write([new ClipboardItem({ "image/png": blob })])
+      .then(() => alert("Скриншот скопирован в буфер обмена!"))
+      .catch(() => alert("Не удалось скопировать в буфер!"));
   });
 };
 
