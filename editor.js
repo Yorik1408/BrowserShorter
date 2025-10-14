@@ -33,27 +33,76 @@ opacitySlider.addEventListener("input", (e) => {
 const undoStack = [];
 const redoStack = [];
 
+// новые стеки для типов действий
+const actionStack = [];       // параллелен undoStack
+const redoActionStack = [];   // параллелен redoStack
+
 // === Undo / Redo ===
-function saveState() {
-  undoStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
-  if (undoStack.length > 30) undoStack.shift();
-  redoStack.length = 0;
+function saveState(type = 'generic') {
+  const snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const last = undoStack[undoStack.length - 1];
+
+  // добавляем только если картинка реально изменилась (или нет last)
+  if (!last || !imageDataEquals(last, snapshot)) {
+    undoStack.push(snapshot);
+    actionStack.push(type);
+    if (undoStack.length > 60) { // немного увеличил лимит
+      undoStack.shift();
+      actionStack.shift();
+    }
+    // новый action => очищаем redo
+    redoStack.length = 0;
+    redoActionStack.length = 0;
+  }
+}
+
+// Быстрая проверка равенства (не сравниваем каждый байт — выбираем шаг)
+function imageDataEquals(a, b) {
+  if (!a || !b || a.data.length !== b.data.length) return false;
+  // для производительности сравниваем выборочно:
+  const step = Math.max(1, Math.floor(a.data.length / 5000));
+  for (let i = 0; i < a.data.length; i += step) {
+    if (a.data[i] !== b.data[i]) return false;
+  }
+  return true;
 }
 
 function undo() {
-  if (undoStack.length < 2) return;
-  const current = undoStack.pop();
+  if (undoStack.length < 2) return; // нужно хотя бы 2 состояния (текущее + предыдущее)
+  const current = undoStack.pop(); // убираем текущее
+  const currentAction = actionStack.pop(); // тип текущего
   redoStack.push(current);
-  const prev = undoStack[undoStack.length - 1];
+  redoActionStack.push(currentAction);
+
+  const prev = undoStack[undoStack.length - 1]; // предыдущее состояние
   ctx.putImageData(prev, 0, 0);
+
+  // скорректируем побочные значения в зависимости от типа
+  if (currentAction === 'circle-number') {
+    // отменили добавление номера — нужно уменьшить счётчик
+    if (circleCounter > 1) circleCounter--;
+  }
+  // можно добавить другие типы, если надо
+
+  // обновим базовый снимок
   baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
 function redo() {
   if (redoStack.length === 0) return;
   const next = redoStack.pop();
+  const nextAction = redoActionStack.pop();
+
   undoStack.push(next);
+  actionStack.push(nextAction);
+
   ctx.putImageData(next, 0, 0);
+
+  // если операция была circle-number — восстановим счётчик
+  if (nextAction === 'circle-number') {
+    circleCounter = (circleCounter >= 99) ? 1 : circleCounter + 1;
+  }
+
   baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
@@ -99,12 +148,13 @@ chrome.runtime.sendMessage({ action: "request-image" }, (resp) => {
     canvas.height = bgImage.naturalHeight;
     ctx.drawImage(bgImage, 0, 0);
     baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    saveState();
+    // начальное состояние - помечаем 'init'
+    saveState('init');
   };
   bgImage.src = resp.url;
 });
 
-// === Мышь ===
+// === Мышь и координаты ===
 function clientToCanvasCoords(e) {
   const rect = canvas.getBoundingClientRect();
   const x = (e.clientX - rect.left) * (canvas.width / rect.width);
@@ -120,9 +170,11 @@ canvas.addEventListener("mousedown", (e) => {
   startX = pos.x;
   startY = pos.y;
 
-  // --- исправлено ---
   if (["blur", "blur-brush"].includes(currentTool)) {
-    saveState(); // состояние ДО начала размытия
+    // сохраняем состояние ДО начала размытия (один раз)
+    saveState(); // generic save; for blur-brush we'll log type after finishing => but to keep consistency we can mark as 'blur' here
+    // однако лучше пометить как 'blur' now:
+    actionStack[actionStack.length - 1] = 'blur'; // пометим только что сохранённый элемент как 'blur'
     baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   }
 
@@ -133,7 +185,7 @@ canvas.addEventListener("mousedown", (e) => {
       const fontSize = Math.max(12, Math.round(canvas.width * 0.02));
       ctx.font = `${fontSize}px sans-serif`;
       ctx.fillText(text, startX, startY);
-      saveState();
+      saveState('text');
     }
     drawing = false;
   }
@@ -155,12 +207,14 @@ canvas.addEventListener("mousedown", (e) => {
   }
 
   if (["rectangle", "crop", "blur"].includes(currentTool)) {
+    baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     tempRect = { x: startX, y: startY, w: 0, h: 0 };
   }
 
   if (currentTool === "circle-number") {
-    drawNumberCircle(pos.x, pos.y);
-    saveState();
+    // рисуем цифру и сразу сохраняем состояние с типом 'circle-number'
+    drawNumberCircle(startX, startY); // использует current circleCounter
+    saveState('circle-number');
   }
 });
 
@@ -176,6 +230,7 @@ canvas.addEventListener("mousemove", (e) => {
   if (["rectangle", "crop", "blur"].includes(currentTool) && tempRect) {
     const w = pos.x - startX;
     const h = pos.y - startY;
+    // рисуем "эскиз" поверх сохранённого baseImageData
     ctx.putImageData(baseImageData, 0, 0);
     ctx.lineWidth = 2;
     ctx.strokeStyle = currentTool === "blur" ? "#888" : (currentTool === "crop" ? "#00BFFF" : currentColor);
@@ -184,6 +239,8 @@ canvas.addEventListener("mousemove", (e) => {
   }
 
   if (currentTool === "blur-brush") {
+    // при первом движении blur-brush мы уже сделали saveState в mousedown,
+    // поэтому здесь просто применяем эффект (не сохраняем каждый кадр)
     applyBlurCircle(pos.x, pos.y, brushSize);
   }
 });
@@ -195,28 +252,39 @@ canvas.addEventListener("mouseup", (e) => {
 
   if (currentTool === "arrow") {
     drawArrow(ctx, startX, startY, pos.x, pos.y);
-    saveState();
+    saveState('arrow');
   } else if (["pen", "marker"].includes(currentTool)) {
     ctx.closePath();
     ctx.globalAlpha = 1.0;
-    saveState();
+    saveState('pen');
   } else if (currentTool === "rectangle") {
     ctx.lineWidth = 2;
     ctx.strokeStyle = currentColor;
     ctx.strokeRect(tempRect.x, tempRect.y, tempRect.w, tempRect.h);
-    saveState();
+    saveState('rect');
   } else if (currentTool === "crop" && tempRect) {
     performCrop(tempRect);
+    // performCrop делает saveState внутри (с типом 'crop')
   } else if (currentTool === "blur" && tempRect) {
     applyBlurOnce(tempRect);
-    saveState();
+    saveState('blur');
   }
 
-  // --- исправлено ---
+  // если использовалась кисть размытия — фиксируем результат одного сеанса как 'blur-brush'
   if (currentTool === "blur-brush") {
-    saveState(); // фиксируем состояние ПОСЛЕ кисти
+    // Пометим последний snapshot (который был сделан в mousedown) как 'blur-brush'
+    // Если в mousedown мы ранее записали generic, перезапишем тип:
+    if (actionStack.length > 0) {
+      actionStack[actionStack.length - 1] = 'blur-brush';
+    }
+    saveState(); // фиксируем ИТОГОВОЕ состояние после кисти (можем пометить как generic или 'blur-brush')
+    // вместо второго saveState можно пометить последний как 'blur-brush' и не дублировать состояние,
+    // но для простоты сейчас мы сохраняем итоговый снимок как отдельный этап:
+    actionStack[actionStack.length - 1] = 'blur-brush';
   }
 
+  // обновляем базовый снимок
+  baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   tempRect = null;
 });
 
@@ -227,12 +295,20 @@ function applyBlurOnce(rect) {
 
   const tempCanvas = document.createElement("canvas");
   const tCtx = tempCanvas.getContext("2d");
-  tempCanvas.width = w;
-  tempCanvas.height = h;
-  tCtx.drawImage(canvas, x, y, w, h, 0, 0, w, h);
+  tempCanvas.width = Math.abs(w);
+  tempCanvas.height = Math.abs(h);
+
+  // учтём знак w/h (если рисовали влево/вверх)
+  const sx = w < 0 ? x + w : x;
+  const sy = h < 0 ? y + h : y;
+  const aw = Math.abs(w);
+  const ah = Math.abs(h);
+
+  tCtx.drawImage(canvas, sx, sy, aw, ah, 0, 0, aw, ah);
+
   ctx.save();
   ctx.filter = "blur(6px)";
-  ctx.drawImage(tempCanvas, x, y);
+  ctx.drawImage(tempCanvas, sx, sy);
   ctx.restore();
 }
 
@@ -240,9 +316,11 @@ function applyBlurOnce(rect) {
 function applyBlurCircle(x, y, radius) {
   const tempCanvas = document.createElement("canvas");
   const tCtx = tempCanvas.getContext("2d");
-  tempCanvas.width = radius * 2;
-  tempCanvas.height = radius * 2;
-  tCtx.drawImage(canvas, x - radius, y - radius, radius * 2, radius * 2, 0, 0, radius * 2, radius * 2);
+  const r2 = radius * 2;
+  tempCanvas.width = r2;
+  tempCanvas.height = r2;
+
+  tCtx.drawImage(canvas, x - radius, y - radius, r2, r2, 0, 0, r2, r2);
 
   ctx.save();
   ctx.filter = "blur(5px)";
@@ -256,16 +334,22 @@ function applyBlurCircle(x, y, radius) {
 // === Обрезка ===
 function performCrop(rect) {
   const { x, y, w, h } = rect;
-  if (w <= 0 || h <= 0) return;
-  saveState();
+  if (w === 0 || h === 0) return;
 
-  const imageData = ctx.getImageData(x, y, w, h);
-  canvas.width = w;
-  canvas.height = h;
+  // нормализуем прямоугольник
+  const sx = w < 0 ? x + w : x;
+  const sy = h < 0 ? y + h : y;
+  const aw = Math.abs(w);
+  const ah = Math.abs(h);
+
+  saveState('crop');
+
+  const imageData = ctx.getImageData(sx, sy, aw, ah);
+  canvas.width = aw;
+  canvas.height = ah;
   ctx.putImageData(imageData, 0, 0);
   baseImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   tempRect = null;
-  saveState();
 }
 
 // === Остальное ===
@@ -289,7 +373,10 @@ function drawArrow(ctx, x1, y1, x2, y2) {
 
 function drawNumberCircle(x, y) {
   const radius = Math.max(14, Math.round(canvas.width * 0.015));
-  const number = circleCounter++;
+  const number = circleCounter;
+  // увеличиваем счётчик для следующего номера
+  circleCounter = circleCounter >= 99 ? 1 : circleCounter + 1;
+
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fillStyle = currentColor;
@@ -301,9 +388,10 @@ function drawNumberCircle(x, y) {
   ctx.font = `${radius * 1.2}px sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(number, x, y);
+  ctx.fillText(number.toString(), x, y);
 }
 
+// === Кнопка Копировать ===
 document.getElementById("copyBtn").onclick = () => {
   canvas.toBlob(blob => {
     navigator.clipboard.write([
