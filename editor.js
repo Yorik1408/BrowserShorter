@@ -304,6 +304,19 @@ function drawNumberCircle(x, y) {
   ctx.fillText(number, x, y);
 }
 
+document.getElementById("copyBtn").onclick = () => {
+  canvas.toBlob(blob => {
+    navigator.clipboard.write([
+      new ClipboardItem({ "image/png": blob })
+    ]).then(() => {
+      alert("Скриншот скопирован в буфер обмена!");
+    }).catch(err => {
+      console.error("Ошибка копирования:", err);
+      alert("Не удалось скопировать в буфер!");
+    });
+  });
+};
+
 // === Горячие клавиши Undo / Redo ===
 document.addEventListener("keydown", (e) => {
   const mod = e.ctrlKey || e.metaKey;
