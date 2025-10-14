@@ -60,12 +60,27 @@
     <button data-tool="text">🔤 Текст</button>
     <input type="color" id="colorPicker" value="#ff0000">
     <button data-tool="crop">✂️ Обрезка</button>
+    <button data-tool="blur">🪄 Размытие</button>
+    <button data-tool="blur-brush">🖌️ Кисть размытия</button>
     <button id="undoBtn">↩ Отменить</button>
     <button id="redoBtn">↪ Повторить</button>
     <button id="copyBtn">📋 Копировать</button>
     <button id="saveBtn">💾 Сохранить</button>
+    <hr>
+      <div style="margin-top:5px;">
+        <label>Толщина / Радиус:
+          <input type="range" id="sizeSlider" min="1" max="100" value="25" style="width:150px;">
+          <span id="sizeValue">25</span>px
+        </label>
+      </div>
+      <div style="margin-top:5px;">
+        <label>Плотность маркера:
+          <input type="range" id="opacitySlider" min="1" max="100" value="10" style="width:150px;">
+          <span id="opacityValue">10</span>%
+        </label>
+      </div>
+    <hr>
   </div>
-
   <canvas id="editorCanvas"></canvas>
   <script src="editor.js"></script>
 </body>
