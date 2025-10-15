@@ -39,25 +39,5 @@
   ],
   "host_permissions": [
     "<all_urls>"
-  ],
-  "commands": {
-    "screenshot-area": {
-      "suggested_key": {
-        "default": "Alt+Shift+S"
-      },
-      "description": "Скриншот области"
-    },
-    "screenshot-tab": {
-      "suggested_key": {
-        "default": "Alt+Shift+A"
-      },
-      "description": "Скриншот вкладки"
-    },
-    "toggle-recording": {
-      "suggested_key": {
-        "default": "Alt+Shift+R"
-      },
-      "description": "Старт/стоп записи"
-    }
-  }
+  ]
 }

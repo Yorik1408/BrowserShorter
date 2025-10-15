@@ -347,13 +347,53 @@ document.getElementById("copyBtn").onclick = () => {
 };
 
 // === Горячие клавиши Undo / Redo ===
-document.addEventListener("keydown", (e) => {
-  const mod = e.ctrlKey || e.metaKey;
-  if (mod && e.key.toLowerCase() === "z" && !e.shiftKey) {
-    e.preventDefault();
-    undo();
-  } else if (mod && (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) {
-    e.preventDefault();
-    redo();
-  }
+// Убедимся, что canvas может получать фокус и фокусируем при клике
+const editorCanvas = document.getElementById('editorCanvas');
+if (editorCanvas && !editorCanvas.hasAttribute('tabindex')) {
+  editorCanvas.setAttribute('tabindex', '0');
+}
+editorCanvas.addEventListener('click', () => editorCanvas.focus());
+
+// Также фокусируем canvas при загрузке редактора, чтобы горячие клавиши работали сразу
+window.addEventListener('load', () => {
+  try { editorCanvas.focus(); } catch (e) { /* noop */ }
 });
+
+// Универсальный обработчик клавиш: работает в capture-режиме, игнорирует текстовые поля
+function undoRedoKeyHandler(e) {
+  // допустимые модификаторы: Ctrl (Windows/Linux) или Meta (Mac)
+  const mod = e.ctrlKey || e.metaKey;
+
+  // если фокус в input/textarea/contenteditable — НЕ перехватываем
+  const active = document.activeElement;
+  if (active) {
+    const tag = active.tagName && active.tagName.toLowerCase();
+    const isEditable = active.isContentEditable;
+    if (tag === 'input' || tag === 'textarea' || isEditable) {
+      return;
+    }
+  }
+
+  if (!mod) return;
+
+  const key = e.key.toLowerCase();
+
+  // Undo: Ctrl/Cmd + Z (без Shift)
+  if (key === 'z' && !e.shiftKey) {
+    e.preventDefault();
+    e.stopPropagation();
+    try { undo(); } catch (err) { console.error('undo error', err); }
+    return;
+  }
+
+  // Redo: Ctrl/Cmd + Y OR Ctrl/Cmd + Shift + Z
+  if (key === 'y' || (key === 'z' && e.shiftKey)) {
+    e.preventDefault();
+    e.stopPropagation();
+    try { redo(); } catch (err) { console.error('redo error', err); }
+    return;
+  }
+}
+
+// Повесим на window в capture-режиме — это надёжнее, чем document
+window.addEventListener('keydown', undoRedoKeyHandler, true);
