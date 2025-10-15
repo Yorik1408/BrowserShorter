@@ -10,15 +10,22 @@
       font-family: sans-serif;
       background: #222;
       color: #fff;
+      user-select: none;
     }
 
     #toolbar {
       background: #333;
       padding: 6px;
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
       gap: 6px;
       border-bottom: 1px solid #444;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 10;
     }
 
     #toolbar button {
@@ -43,10 +50,29 @@
       background: transparent;
     }
 
+    #canvasContainer {
+      position: absolute;
+      top: 60px;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      overflow: hidden;
+      background: #111;
+    }
+
     canvas {
+      position: absolute;
+      left: 0;
+      top: 0;
       display: block;
-      background: #fff;
       cursor: crosshair;
+      image-rendering: pixelated;
+    }
+
+    hr {
+      height: 24px;
+      border: none;
+      border-left: 1px solid #555;
     }
   </style>
 </head>
@@ -59,29 +85,26 @@
     <button data-tool="circle-number">🔵 Круг с номером</button>
     <button data-tool="text">🔤 Текст</button>
     <input type="color" id="colorPicker" value="#ff0000">
-    <button data-tool="crop">✂️ Обрезка</button>
-    <button data-tool="blur">🪄 Размытие по области</button>
-    <button data-tool="blur-brush">🖌️ Кисть размытия</button>
     <button id="undoBtn">↩ Отменить</button>
     <button id="redoBtn">↪ Повторить</button>
     <button id="copyBtn">📋 Копировать</button>
     <button id="saveBtn">💾 Сохранить</button>
     <hr>
-      <div style="margin-top:5px;">
-        <label>Толщина / Радиус:
-          <input type="range" id="sizeSlider" min="1" max="100" value="25" style="width:150px;">
-          <span id="sizeValue">25</span>px
-        </label>
-      </div>
-      <div style="margin-top:5px;">
-        <label>Плотность маркера:
-          <input type="range" id="opacitySlider" min="1" max="100" value="10" style="width:150px;">
-          <span id="opacityValue">10</span>%
-        </label>
-      </div>
-    <hr>
+    <label>Толщина:
+      <input type="range" id="sizeSlider" min="1" max="100" value="25" style="width:120px;">
+      <span id="sizeValue">25</span>px
+    </label>
+    <label>Плотность маркера:
+      <input type="range" id="opacitySlider" min="1" max="100" value="10" style="width:120px;">
+      <span id="opacityValue">10</span>%
+    </label>
   </div>
-  <canvas id="editorCanvas"></canvas>
+
+  <div id="canvasContainer">
+    <canvas id="bgCanvas"></canvas>
+    <canvas id="editorCanvas"></canvas>
+  </div>
+
   <script src="editor.js"></script>
 </body>
 </html>
