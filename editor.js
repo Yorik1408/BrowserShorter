@@ -399,9 +399,13 @@ document.getElementById("copyBtn").onclick = () => {
 // === Горячие клавиши ===
 document.addEventListener("keydown", (e) => {
   const mod = e.ctrlKey || e.metaKey;
-  if (mod && e.key.toLowerCase() === "z" && !e.shiftKey) {
-    e.preventDefault(); undo();
-  } else if (mod && (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) {
-    e.preventDefault(); redo();
+  const shift = e.shiftKey;
+
+  if (mod && shift && e.key.toLowerCase() === "z") {
+    e.preventDefault();
+    undo();
+  } else if (mod && shift && e.key.toLowerCase() === "y") {
+    e.preventDefault();
+    redo();
   }
 });
