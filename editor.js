@@ -35,14 +35,14 @@ opacitySlider.addEventListener("input", (e) => {
   opacityValue.textContent = e.target.value;
 });
 
-// === Undo / Redo ===
+// === Undo / Redo с сохранением в DataURL ===
 const undoStack = [];
 const redoStack = [];
 const actionStack = [];
 const redoActionStack = [];
 
 function saveState(type = "generic") {
-  const snapshot = drawCtx.getImageData(0, 0, drawLayer.width, drawLayer.height);
+  const snapshot = drawLayer.toDataURL("image/png");
   undoStack.push(snapshot);
   actionStack.push(type);
   if (undoStack.length > 60) { undoStack.shift(); actionStack.shift(); }
@@ -50,27 +50,38 @@ function saveState(type = "generic") {
   redoActionStack.length = 0;
 }
 
-function undo() {
+function restoreState(dataURL) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      drawCtx.clearRect(0, 0, drawLayer.width, drawLayer.height);
+      drawCtx.drawImage(img, 0, 0, drawLayer.width, drawLayer.height);
+      redraw();
+      resolve();
+    };
+    img.src = dataURL;
+  });
+}
+
+async function undo() {
   if (undoStack.length < 2) return;
   const current = undoStack.pop();
   const type = actionStack.pop();
   redoStack.push(current);
   redoActionStack.push(type);
   const prev = undoStack[undoStack.length - 1];
-  drawCtx.putImageData(prev, 0, 0);
+  await restoreState(prev);
   if (type === "circle-number" && circleCounter > 1) circleCounter--;
-  redraw();
 }
 
-function redo() {
+async function redo() {
   if (!redoStack.length) return;
   const next = redoStack.pop();
   const type = redoActionStack.pop();
   undoStack.push(next);
   actionStack.push(type);
-  drawCtx.putImageData(next, 0, 0);
+  await restoreState(next);
   if (type === "circle-number") circleCounter++;
-  redraw();
 }
 
 // === Палитра ===
@@ -398,7 +409,7 @@ document.getElementById("copyBtn").onclick = () => {
 
 // === Горячие клавиши ===
 document.addEventListener("keydown", (e) => {
-  const mod = e.ctrlKey || e.metaKey;
+  const mod = e.altlKey || e.metaKey;
   const shift = e.shiftKey;
 
   if (mod && shift && e.key.toLowerCase() === "z") {
