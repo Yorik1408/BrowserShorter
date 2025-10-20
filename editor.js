@@ -16,7 +16,7 @@ let brushSize = 25;
 let markerOpacity = 0.1;
 let displayScale = 1;
 
-// === Offscreen draw layer для всех набросков ===
+// === Offscreen draw layer ===
 let drawLayer = document.createElement("canvas");
 let drawCtx = drawLayer.getContext("2d", { willReadFrequently: true });
 
@@ -35,7 +35,7 @@ opacitySlider.addEventListener("input", (e) => {
   opacityValue.textContent = e.target.value;
 });
 
-// === Undo / Redo с сохранением в DataURL ===
+// === Undo / Redo ===
 const undoStack = [];
 const redoStack = [];
 const actionStack = [];
@@ -89,9 +89,6 @@ document.getElementById("colorPicker").addEventListener("input", (e) => currentC
 document.getElementById("undoBtn").onclick = undo;
 document.getElementById("redoBtn").onclick = redo;
 
-// === Helper для DPR ===
-function getDPR() { return window.devicePixelRatio || 1; }
-
 // === Загрузка изображения ===
 chrome.runtime.sendMessage({ action: "request-image" }, (resp) => {
   if (!resp || !resp.url) return;
@@ -101,103 +98,68 @@ chrome.runtime.sendMessage({ action: "request-image" }, (resp) => {
   bgImage.onload = () => {
     imgNaturalWidth = bgImage.naturalWidth;
     imgNaturalHeight = bgImage.naturalHeight;
+
+    // ✅ Всегда рисуем в оригинальном разрешении
+    canvas.width = imgNaturalWidth;
+    canvas.height = imgNaturalHeight;
+    drawLayer.width = imgNaturalWidth;
+    drawLayer.height = imgNaturalHeight;
+
     fitCanvasToWindow();
     drawBaseImage();
-    drawCtx.clearRect(0, 0, drawLayer.width, drawLayer.height);
     saveState("init");
   };
   bgImage.src = resp.url;
 });
 
-// === Настройка канваса под окно (в device pixels) ===
+// === Масштаб отображения (только CSS, без потери качества) ===
 function fitCanvasToWindow() {
   if (!imgNaturalWidth || !imgNaturalHeight) return;
-  const dpr = getDPR();
   const imgAspect = imgNaturalWidth / imgNaturalHeight;
-  const availW = window.innerWidth;
-  const availH = Math.max(100, window.innerHeight - 60);
-  const winAspect = availW / availH;
+  const winAspect = window.innerWidth / (window.innerHeight - 60);
   let displayW, displayH;
 
   if (winAspect > imgAspect) {
-    displayH = availH;
+    displayH = window.innerHeight - 60;
     displayW = displayH * imgAspect;
   } else {
-    displayW = availW;
+    displayW = window.innerWidth;
     displayH = displayW / imgAspect;
   }
 
-  canvas.width = Math.round(displayW * dpr);
-  canvas.height = Math.round(displayH * dpr);
+  // ✅ Меняем только CSS размеры
   canvas.style.width = `${displayW}px`;
   canvas.style.height = `${displayH}px`;
-
-  drawLayer.width = canvas.width;
-  drawLayer.height = canvas.height;
-
-  displayScale = canvas.width / imgNaturalWidth;
-
-  [ctx, drawCtx].forEach(c => {
-    c.imageSmoothingEnabled = true;
-    c.imageSmoothingQuality = "high";
-  });
-}
-
-// === Сохранение и восстановление слоя при ресайзе ===
-async function saveDrawLayerSnapshot() {
-  try {
-    return await createImageBitmap(drawLayer);
-  } catch {
-    const tmp = document.createElement("canvas");
-    tmp.width = drawLayer.width; tmp.height = drawLayer.height;
-    tmp.getContext("2d").drawImage(drawLayer, 0, 0);
-    return tmp;
-  }
-}
-function restoreDrawLayerSnapshot(snapshot) {
-  drawCtx.clearRect(0, 0, drawLayer.width, drawLayer.height);
-  drawCtx.drawImage(snapshot, 0, 0, drawLayer.width, drawLayer.height);
 }
 
 // === Перерисовка ===
 function drawBaseImage() {
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(bgImage, 0, 0, imgNaturalWidth, imgNaturalHeight, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bgImage, 0, 0, imgNaturalWidth, imgNaturalHeight);
 }
 function redraw() {
   drawBaseImage();
   ctx.drawImage(drawLayer, 0, 0);
 }
 
-// === Resize handler ===
-let resizeTimeout;
-window.addEventListener("resize", () => {
-  if (!imgNaturalWidth) return;
-  clearTimeout(resizeTimeout);
-  resizeTimeout = setTimeout(async () => {
-    const snap = await saveDrawLayerSnapshot();
-    fitCanvasToWindow();
-    drawBaseImage();
-    if (snap) restoreDrawLayerSnapshot(snap);
-    redraw();
-  }, 150);
-});
-
 // === Координаты ===
 function clientToCanvasCoords(e) {
   const rect = canvas.getBoundingClientRect();
-  const x = ((e.clientX - rect.left) / rect.width) * drawLayer.width;
-  const y = ((e.clientY - rect.top) / rect.height) * drawLayer.height;
+  const x = ((e.clientX - rect.left) / rect.width) * canvas.width;
+  const y = ((e.clientY - rect.top) / rect.height) * canvas.height;
   return { x, y };
 }
+
+// === Обработка resize ===
+window.addEventListener("resize", () => {
+  fitCanvasToWindow();
+  redraw();
+});
 
 // === Инструменты ===
 document.querySelectorAll("#toolbar button[data-tool]").forEach(btn => {
   btn.onclick = () => { currentTool = btn.dataset.tool; };
 });
-
-let tempBlur = null;
 
 canvas.addEventListener("mousedown", (e) => {
   const pos = clientToCanvasCoords(e);
@@ -283,20 +245,16 @@ canvas.addEventListener("mouseup", (e) => {
     drawCtx.strokeStyle = currentColor;
     drawCtx.strokeRect(tempRect.x, tempRect.y, tempRect.w, tempRect.h);
     saveState("rect");
-  } else if (currentTool === "crop" && tempRect) {
-    performCrop(tempRect);
   } else if (currentTool === "blur" && tempRect) {
     applyBlurOnce(tempRect);
     saveState("blur");
-  } else if (currentTool === "blur-brush") {
-    saveState("blur-brush");
   }
 
   tempRect = null;
   redraw();
 });
 
-// === Инструменты ===
+// === Остальные функции ===
 function drawArrow(ctx, x1, y1, x2, y2) {
   const headlen = Math.max(8, Math.round(canvas.width * 0.01));
   const dx = x2 - x1, dy = y2 - y1;
@@ -333,52 +291,64 @@ function drawNumberCircle(ctx, x, y) {
   ctx.fillText(number.toString(), x, y);
 }
 
-// === Размытие ===
+// === Размытие (исправленное) ===
 function applyBlurOnce(rect) {
   const { x, y, w, h } = rect;
   if (!w || !h) return;
+
   const sx = w < 0 ? x + w : x;
   const sy = h < 0 ? y + h : y;
   const aw = Math.abs(w), ah = Math.abs(h);
+
+  // Создаём временный canvas с фоном + слоями
   const temp = document.createElement("canvas");
-  temp.width = aw; temp.height = ah;
+  temp.width = imgNaturalWidth;
+  temp.height = imgNaturalHeight;
   const tctx = temp.getContext("2d");
-  tctx.drawImage(drawLayer, sx, sy, aw, ah, 0, 0, aw, ah);
+  tctx.drawImage(bgImage, 0, 0, imgNaturalWidth, imgNaturalHeight);
+  tctx.drawImage(drawLayer, 0, 0);
+
+  // Вырезаем нужный участок и применяем размытие
+  const blurPiece = document.createElement("canvas");
+  blurPiece.width = aw;
+  blurPiece.height = ah;
+  const bctx = blurPiece.getContext("2d");
+  bctx.drawImage(temp, sx, sy, aw, ah, 0, 0, aw, ah);
+
   drawCtx.save();
-  drawCtx.filter = "blur(6px)";
-  drawCtx.drawImage(temp, sx, sy);
+  drawCtx.filter = "blur(8px)";
+  drawCtx.drawImage(blurPiece, sx, sy);
   drawCtx.restore();
+
+  redraw();
 }
 
 function applyBlurCircle(x, y, r) {
+  // Тоже комбинируем фон + слой перед размытием
   const temp = document.createElement("canvas");
-  temp.width = r * 2; temp.height = r * 2;
+  temp.width = imgNaturalWidth;
+  temp.height = imgNaturalHeight;
   const tctx = temp.getContext("2d");
-  tctx.drawImage(drawLayer, x - r, y - r, r * 2, r * 2, 0, 0, r * 2, r * 2);
+  tctx.drawImage(bgImage, 0, 0, imgNaturalWidth, imgNaturalHeight);
+  tctx.drawImage(drawLayer, 0, 0);
+
+  const tempCircle = document.createElement("canvas");
+  tempCircle.width = r * 2;
+  tempCircle.height = r * 2;
+  const cctx = tempCircle.getContext("2d");
+  cctx.drawImage(temp, x - r, y - r, r * 2, r * 2, 0, 0, r * 2, r * 2);
+
   drawCtx.save();
-  drawCtx.filter = "blur(5px)";
+  drawCtx.filter = "blur(6px)";
   drawCtx.beginPath();
   drawCtx.arc(x, y, r, 0, Math.PI * 2);
   drawCtx.clip();
-  drawCtx.drawImage(temp, x - r, y - r);
+  drawCtx.drawImage(tempCircle, x - r, y - r);
   drawCtx.restore();
-}
 
-// === Обрезка ===
-function performCrop(rect) {
-  const { x, y, w, h } = rect;
-  if (!w || !h) return;
-  const sx = w < 0 ? x + w : x;
-  const sy = h < 0 ? y + h : y;
-  const aw = Math.abs(w), ah = Math.abs(h);
-  const crop = drawCtx.getImageData(sx, sy, aw, ah);
-  imgNaturalWidth = aw;
-  imgNaturalHeight = ah;
-  fitCanvasToWindow();
-  drawCtx.putImageData(crop, 0, 0);
-  saveState("crop");
   redraw();
 }
+
 
 // === Сохранение ===
 document.getElementById("saveBtn").onclick = () => {
@@ -386,11 +356,8 @@ document.getElementById("saveBtn").onclick = () => {
   off.width = imgNaturalWidth;
   off.height = imgNaturalHeight;
   const offCtx = off.getContext("2d");
-  offCtx.imageSmoothingEnabled = true;
-  offCtx.imageSmoothingQuality = "high";
   offCtx.drawImage(bgImage, 0, 0, imgNaturalWidth, imgNaturalHeight);
-  offCtx.drawImage(drawLayer, 0, 0, drawLayer.width, drawLayer.height, 0, 0, imgNaturalWidth, imgNaturalHeight);
-
+  offCtx.drawImage(drawLayer, 0, 0);
   const now = new Date();
   const pad = (n) => String(n).padStart(2, "0");
   const filename = `Screenshot_${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}.png`;
@@ -407,15 +374,46 @@ document.getElementById("copyBtn").onclick = () => {
   });
 };
 
+// === Загрузка в облако (IMGBB) ===
+document.getElementById("uploadBtn").onclick = async () => {
+  const off = document.createElement("canvas");
+  off.width = imgNaturalWidth;
+  off.height = imgNaturalHeight;
+  const offCtx = off.getContext("2d");
+  offCtx.drawImage(bgImage, 0, 0, imgNaturalWidth, imgNaturalHeight);
+  offCtx.drawImage(drawLayer, 0, 0);
+
+  const dataUrl = off.toDataURL("image/png");
+  const base64 = dataUrl.split(",")[1];
+  const fileName = `Screenshot_${Date.now()}.png`;
+  const apiKey = "364c56e69ce9a6479c3f2d9b0f03a979";
+
+  const formData = new FormData();
+  formData.append("image", base64);
+  formData.append("name", fileName);
+
+  try {
+    const res = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, { method: "POST", body: formData });
+    const json = await res.json();
+    if (json.success) {
+      const link = json.data.url;
+      navigator.clipboard.writeText(link);
+      alert(`✅ Ссылка скопирована:\n${link}`);
+      window.open(link, "_blank");
+    } else alert("Ошибка при загрузке");
+  } catch (err) {
+    console.error(err);
+    alert("Не удалось загрузить скриншот");
+  }
+};
+
 // === Горячие клавиши ===
 document.addEventListener("keydown", (e) => {
-  const mod = e.altlKey || e.metaKey;
-  const shift = e.shiftKey;
-
-  if (mod && shift && e.key.toLowerCase() === "z") {
+  const mod = e.ctrlKey || e.metaKey;
+  if (mod && e.key.toLowerCase() === "z" && !e.shiftKey) {
     e.preventDefault();
     undo();
-  } else if (mod && shift && e.key.toLowerCase() === "y") {
+  } else if (mod && (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) {
     e.preventDefault();
     redo();
   }
